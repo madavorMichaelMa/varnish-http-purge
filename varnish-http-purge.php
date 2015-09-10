@@ -137,7 +137,10 @@ class VarnishPurger {
 	protected function purgeUrl($url) {
 		// Parse the URL for proxy proxies
 		$p = parse_url($url);
-
+		
+		// Filter to add user agents
+		// @param array $userAgents the user-agents to cycle through
+		$userAgents = apply_filters( 'vhp_user_agents', null);
 
 		if ( isset($p['query']) && ( $p['query'] == 'vhp-regex' ) ) {
 			$pregex = '.*';
@@ -181,7 +184,16 @@ class VarnishPurger {
 
 		// Cleanup CURL functions to be wp_remote_request and thus better
 		// http://wordpress.org/support/topic/incompatability-with-editorial-calendar-plugin
-		wp_remote_request($purgeme, array('method' => 'PURGE', 'headers' => array( 'host' => $p['host'], 'X-Purge-Method' => $varnish_x_purgemethod ) ) );
+		if ( isset($userAgents) && is_array($userAgents)) {
+			for ($i=0; $i<count($userAgents); $i++)
+			{
+				wp_remote_request($purgeme, array('method' => 'PURGE', 'headers' => array( 'host' => $p['host'], 'X-Purge-Method' => $varnish_x_purgemethod, 'User-Agent' => $userAgents[$i] ) ) );
+			}
+		} elseif ( isset($userAgents) && !is_array($userAgents)) {
+			wp_remote_request($purgeme, array('method' => 'PURGE', 'headers' => array( 'host' => $p['host'], 'X-Purge-Method' => $varnish_x_purgemethod, 'User-Agent' => $userAgents ) ) );
+		} else {
+			wp_remote_request($purgeme, array('method' => 'PURGE', 'headers' => array( 'host' => $p['host'], 'X-Purge-Method' => $varnish_x_purgemethod ) ) );
+		}
 
 		do_action('after_purge_url', $url, $purgeme);
 	}
