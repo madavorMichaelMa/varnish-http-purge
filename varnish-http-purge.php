@@ -29,7 +29,7 @@ class VarnishPurger {
 	protected $purgeUrls = array();
 
 	public function __construct() {
-		defined('varnish-http-purge') ||define('varnish-http-purge', true);
+		defined('varnish-http-purge') || define('varnish-http-purge', true);
 		defined('VHP_VARNISH_IP') || define('VHP_VARNISH_IP', false );
 		add_action( 'init', array( &$this, 'init' ) );
 		add_action( 'activity_box_end', array( $this, 'varnish_rightnow' ), 100 );
@@ -44,7 +44,7 @@ class VarnishPurger {
 		}
 		add_action( 'shutdown', array($this, 'executePurge') );
 
-		if ( isset($_GET['vhp_flush_all']) && check_admin_referer('varnish-http-purge') ) {
+		if ( (isset($_GET['vhp_flush_all']) || isset($_GET['vhp_flush_post'])) && check_admin_referer('varnish-http-purge') ) {
 			add_action( 'admin_notices' , array( $this, 'purgeMessage'));
 		}
 
@@ -55,8 +55,12 @@ class VarnishPurger {
 		if (
 			// SingleSite - admins can always purge
 			( !is_multisite() && current_user_can('activate_plugins') ) ||
+			// SingleSite - allow editors to purge
+			( !is_multisite() && current_user_can('publish_pages') ) ||
 			// Multisite - Network Admin can always purge
 			current_user_can('manage_network') ||
+			// Multisite - Allow Editors in Multisite to purge
+			( is_multisite() && current_user_can('publish_pages') ) ||
 			// Multisite - Site admins can purge UNLESS it's a subfolder install and we're on site #1
 			( is_multisite() && !current_user_can('manage_network') && ( SUBDOMAIN_INSTALL || ( !SUBDOMAIN_INSTALL && ( BLOG_ID_CURRENT_SITE != $blog_id ) ) ) )
 			) {
@@ -66,7 +70,11 @@ class VarnishPurger {
 	}
 
 	function purgeMessage() {
-		echo "<div id='message' class='updated fade'><p><strong>".__('Varnish cache purged!', 'varnish-http-purge')."</strong></p></div>";
+		if (isset($_GET['vhp_flush_post'])) {
+			echo "<div id='message' class='updated fade'><p><strong>".__('Varnish cache for '.home_url().esc_url_raw($_GET['vhp_flush_post']).' purged!', 'varnish-http-purge')."</strong></p></div>";
+		} elseif (isset($_GET['vhp_flush_all'])) {
+			echo "<div id='message' class='updated fade'><p><strong>".__('Varnish cache purged!', 'varnish-http-purge')."</strong></p></div>";
+		}
 	}
 
 	function prettyPermalinksMessage() {
@@ -74,14 +82,17 @@ class VarnishPurger {
 	}
 
 	function varnish_rightnow_adminbar($admin_bar){
-		$admin_bar->add_menu( array(
-			'id'	=> 'purge-varnish-cache-all',
-			'title' => 'Purge Varnish',
-			'href'  => wp_nonce_url(add_query_arg('vhp_flush_all', 1), 'varnish-http-purge'),
-			'meta'  => array(
-				'title' => __('Purge Varnish','varnish-http-purge'),
-			),
-		));
+		//Don't show in admin pages
+		if ( !is_admin() ) {
+			$admin_bar->add_menu( array(
+				'id'	=> 'purge-varnish-cache-all',
+				'title' => 'Purge Varnish URL',
+				'href'  => wp_nonce_url(add_query_arg('vhp_flush_post', esc_url_raw(strtok($_SERVER["REQUEST_URI"],'?')),admin_url()), 'varnish-http-purge'),
+				'meta'  => array(
+					'title' => __('Purge Varnish','varnish-http-purge'),
+				),
+			));
+		}
 	}
 
 	function varnish_rightnow() {
@@ -126,6 +137,8 @@ class VarnishPurger {
 			if ( isset($_GET['vhp_flush_all']) && current_user_can('manage_options') && check_admin_referer('varnish-http-purge') ) {
 				$this->purgeUrl( home_url() .'/?vhp-regex' );
 			   // wp_cache_flush();
+			} elseif ( isset($_GET['vhp_flush_post']) && current_user_can('manage_options') && check_admin_referer('varnish-http-purge')) {
+				$this->purgeUrl(home_url() . esc_url_raw($_GET['vhp_flush_post']));
 			}
 		} else {
 			foreach($purgeUrls as $url) {
